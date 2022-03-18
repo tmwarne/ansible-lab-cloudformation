@@ -1,0 +1,381 @@
+#Referece: https://docs.aws.amazon.com/codebuild/latest/userguide/cloudformation-vpc-template.html
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access into the server
+    Type: AWS::EC2::KeyPair::KeyName
+  # AnsibleUser:
+  #   Description: Name of the username to be used with Ansible
+  #   Type: String
+  # AnsiblePass:
+  #   Description: Password to be used by Ansible
+  #   Type: String
+Mappings:
+  RegionMap:
+    us-east-1: 
+      AMI: ami-033b95fb8079dc481
+    us-east-2: 
+      AMI: ami-0b614a5d911900a9b
+    us-west-1:
+      AMI: ami-0573b70afecda915d
+    us-west-2:
+      AMI: ami-0341aeea105412b57
+Resources:
+  LabVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.128.0.0/16
+      Tags:
+        - Key: Name
+          Value: AnsibleLabVPC
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: AnsibleLabIG
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref LabVPC
+  ProdSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      AvailabilityZone: !Join 
+        - ""
+        - - !Ref AWS::Region
+          - 'a'
+      CidrBlock: 10.128.0.0/23
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Prod1
+  ProdSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      AvailabilityZone: !Join 
+        - ""
+        - - !Ref AWS::Region
+          - 'b'
+      CidrBlock: 10.128.2.0/23
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Prod2
+  DevSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      AvailabilityZone: !Join 
+        - ""
+        - - !Ref AWS::Region
+          - 'a'
+      CidrBlock: 10.128.64.0/23
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Dev1
+  DevSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      AvailabilityZone: !Join 
+        - ""
+        - - !Ref AWS::Region
+          - 'b'
+      CidrBlock: 10.128.66.0/23
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Dev2
+  MgmtSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      AvailabilityZone: !Join 
+        - ""
+        - - !Ref AWS::Region
+          - 'a'
+      CidrBlock: 10.128.255.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Mgmt
+  NatGatewayAEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGatewayBEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc  
+  NatGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayAEIP.AllocationId
+      SubnetId: !Ref ProdSubnet1
+  NatGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayBEIP.AllocationId
+      SubnetId: !Ref ProdSubnet2
+  ProdRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: Prod Routes
+  DefaultProdRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref ProdRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  ProdSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ProdRouteTable
+      SubnetId: !Ref ProdSubnet1
+  ProdSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ProdRouteTable
+      SubnetId: !Ref ProdSubnet2
+  DevRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: Dev Routes (az-a)
+  DefaultDevRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref DevRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+  DevSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DevRouteTable1
+      SubnetId: !Ref DevSubnet1
+  DevRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: Dev Routes (az-b)
+  DefaultDevRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref DevRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayB
+  DevSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DevRouteTable2
+      SubnetId: !Ref DevSubnet2
+  MgmtRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ProdRouteTable
+      SubnetId: !Ref MgmtSubnet
+  ControllerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "ansible-controller-sg"
+      GroupDescription: "Security group for Ansible Controller"
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+  ProdAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "Prod-App-sg"
+      GroupDescription: "Security group for Prod env"
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0     
+  DevAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "dev-app-sg"
+      GroupDescription: "Security group for Dev env"
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+  S3Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: s3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: !Join 
+                - ""
+                - - !GetAtt S3Bucket.Arn
+                  - '/*'       
+  S3InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref S3Role
+  mgm01:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      InstanceType: t2.micro
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      Tags:
+        - Key: "Name"
+          Value: "Ansible-Controller"
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          PrivateIpAddress: 10.128.255.20
+          SubnetId: !Ref MgmtSubnet
+          GroupSet: 
+            - !Ref ControllerSecurityGroup
+      IamInstanceProfile: !Ref S3InstanceProfile
+      UserData:
+        Fn::Base64: 
+          !Sub |
+              #!/bin/bash -ex
+              yum update -y
+              amazon-linux-extras install ansible2 -y
+  PrdApp101:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      InstanceType: t2.micro
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      Tags:
+        - Key: "Name"
+          Value: "prd-app1-01"
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          PrivateIpAddress: 10.128.0.20
+          SubnetId: !Ref ProdSubnet1
+          GroupSet: 
+            - !Ref ProdAppSecurityGroup
+      UserData:
+        'Fn::Base64':
+          !Sub | 
+            #!/bin/bash 
+            sed -i '/ssh_pw/s/false/true/' /etc/cloud/cloud.cfg
+            sed -i '/PasswordAuthentication/s/no/yes/' /etc/ssh/sshd_config
+            adduser -g ec2-user -G wheel ansible
+            systemctl restart sshd.service
+  PrdApp102:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      InstanceType: t2.micro
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      Tags:
+        - Key: "Name"
+          Value: "prd-app1-02"
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          PrivateIpAddress: 10.128.2.20
+          SubnetId: !Ref ProdSubnet2
+          GroupSet: 
+            - !Ref ProdAppSecurityGroup
+      UserData:
+        'Fn::Base64':
+          !Sub | 
+            #!/bin/bash
+            sed -i '/ssh_pw/s/false/true/' /etc/cloud/cloud.cfg
+            sed -i '/PasswordAuthentication/s/no/yes/' /etc/ssh/sshd_config
+            adduser -g ec2-user -G wheel ansible
+            systemctl restart sshd.service
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: Private
+      BucketName: !Join
+      - "-"
+      - - "ansible"
+        - !Select
+          - 0
+          - !Split
+            - "-"
+            - !Select
+              - 2
+              - !Split
+                - "/"
+                - !Ref "AWS::StackId"
+  S3GatewayEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:GetObject'
+            Resource:
+              - !Sub 'arn:aws:s3:::amazonlinux.${AWS::Region}.amazonaws.com/*'
+              - !Sub 'arn:aws:s3:::amazonlinux-2-repos-${AWS::Region}/*'
+              - !Join 
+                - ""
+                - - !GetAtt S3Bucket.Arn
+                  - '/*'
+      RouteTableIds:
+        - !Ref ProdRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref LabVPC
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          -
+            Action: '*'
+            Effect: Allow
+            Resource:
+              - !Join 
+                - ""
+                - - !GetAtt S3Bucket.Arn
+                  - '/*'
+            Principal:
+              AWS:
+                - !GetAtt S3Role.Arn

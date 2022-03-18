@@ -1,0 +1,43 @@
+- hosts: all
+
+  tasks:
+    - name: Upgrade all packages
+      yum:
+        name: '*'
+        state: latest
+      become: yes
+
+    - name: Install a list of packages (suitable replacement for 2.11 loop deprecation warning)
+      yum:
+        name:
+          - python-pip
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+          - amazon-linux-extras
+        state: present
+      become: yes
+
+    - name: Add extras repository
+      shell: yum-config-manager --enable extras
+      become: yes
+
+    - name: Enable Some packages from amazon-linux-extras packages
+      shell: "amazon-linux-extras enable python3.8 ansible2 docker -y"
+      become: yes
+
+    - name: install Some packages from amazon-linux-extras packages
+      shell: "amazon-linux-extras install python3.8 ansible2 docker -y"
+      become: yes
+
+    - name: clean yum metadata cache
+      command: yum clean metadata
+      args:
+        warn: false
+      become: yes
+
+    - name: Upgrade pip3
+      shell: "python3.8 -m pip install pip --upgrade"
+      become: yes
+
+   

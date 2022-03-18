@@ -1,0 +1,6 @@
+all:
+  hosts:
+    10.128.2.20:
+    10.128.0.20:
+  vars:
+    ansible_user: ansible
